@@ -97,12 +97,15 @@ openclaw plugins update dingtalk
 
 **模板配置示例：**
 
-```json5
+```json
 {
-  channels: {
-    dingtalk: {
-      messageType: 'card',
-      cardTemplateId: '你复制的模板ID', // 粘贴复制的模板 ID
+  "channels": {
+    "dingtalk": {
+      ... 
+      "messageType": 'card',
+      "cardTemplateId": '你复制的模板ID',
+      "cardTemplateKey": '你模板的内容变量',
+      ...
     },
   },
 }
