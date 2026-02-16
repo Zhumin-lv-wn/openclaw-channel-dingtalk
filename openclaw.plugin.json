@@ -1,5 +1,5 @@
 {
-  "id": "dingtalk",
+  "id": "openclaw-dingtalk",
   "channels": ["dingtalk"],
   "configSchema": {
     "type": "object",
