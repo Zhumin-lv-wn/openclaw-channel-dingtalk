@@ -44,10 +44,70 @@ openclaw plugins install -l .
 2. 确保包含 `index.ts`, `openclaw.plugin.json` 和 `package.json`。
 3. 运行 `openclaw plugins list` 确认 `dingtalk` 已显示在列表中。
 
+### 安装后必做：配置插件信任白名单（`plugins.allow`）
+
+从 OpenClaw 新版本开始，如果发现了非内置插件且 `plugins.allow` 为空，会提示：
+
+```text
+[plugins] plugins.allow is empty; discovered non-bundled plugins may auto-load ...
+```
+
+这是一条安全告警（不是安装失败），建议显式写入你信任的插件 id。
+
+#### 步骤 1：确认插件 id
+
+本插件 id 固定为：`dingtalk`（定义于 `openclaw.plugin.json`）。
+
+也可用下面命令查看已发现插件：
+
+```bash
+openclaw plugins list
+```
+
+#### 步骤 2：在 `~/.openclaw/openclaw.json` 添加 `plugins.allow`
+
+```json5
+{
+  "plugins": {
+    "enabled": true,
+    "allow": ["dingtalk"]
+  }
+}
+```
+
+如果你还有其他已安装且需要启用的插件，请一并加入，例如：
+
+```json5
+{
+  "plugins": {
+    "allow": ["dingtalk", "telegram", "voice-call"]
+  }
+}
+```
+
+#### 步骤 3：重启 Gateway
+
+```bash
+openclaw gateway restart
+```
+
+> 注意：如果你之前已经配置过 `plugins.allow`，但没有 `dingtalk`，那么插件不会被加载。请把 `dingtalk` 加入该列表。
+
 ## 更新
 
+`openclaw plugins update` 使用插件 id（不是 npm 包名），并且仅适用于 npm 安装来源。
+
+如果你是通过 npm 安装本插件：
+
+```bash
+openclaw plugins update dingtalk
 ```
-openclaw plugins update @soimy/dingtalk
+
+如果你是本地源码/链接安装（`openclaw plugins install -l .`），请在插件目录更新代码后重启 Gateway：
+
+```bash
+git pull
+openclaw gateway restart
 ```
 
 ## 配置
@@ -140,12 +200,17 @@ openclaw configure --section channels
 
 ### 方法 2：手动配置文件
 
-在 `~/.openclaw/openclaw.json` 的 `channels` 下添加（仅作参考，交互式配置会自动生成）：
+在 `~/.openclaw/openclaw.json` 中添加（仅作参考，交互式配置会自动生成）：
 
-> 只添加dingtalk部分，内容参考上文钉钉开发者配置指南
+> 至少包含 `plugins.allow` 和 `channels.dingtalk` 两部分，内容参考上文钉钉开发者配置指南
 
 ```json5
 {
+  "plugins": {
+    "enabled": true,
+    "allow": ["dingtalk"]
+  },
+
   ...
   "channels": {
     "telegram": { ... },
