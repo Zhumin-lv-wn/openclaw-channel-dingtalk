@@ -29,6 +29,10 @@ describe('plugin outbound lifecycle', () => {
     });
 
     it('should trigger sendMessage when outbound.sendText is called', async () => {
+        const sendText = dingtalkPlugin.outbound?.sendText;
+        if (!sendText) {
+            throw new Error('dingtalkPlugin.outbound.sendText is not defined');
+        }
         sendMessageMock.mockResolvedValue({ ok: true, data: { messageId: 'm_123' } });
 
         const cfg = {
@@ -40,12 +44,11 @@ describe('plugin outbound lifecycle', () => {
             },
         };
 
-        const result = await dingtalkPlugin.outbound.sendText({
+        const result = await sendText({
             cfg,
             to: 'user_123',
             text: 'hello',
             accountId: 'default',
-            log: undefined,
         });
 
         expect(sendMessageMock).toHaveBeenCalledWith(
@@ -59,6 +62,10 @@ describe('plugin outbound lifecycle', () => {
     });
 
     it('should capture DingTalk API error code and throw from sendText', async () => {
+        const sendText = dingtalkPlugin.outbound?.sendText;
+        if (!sendText) {
+            throw new Error('dingtalkPlugin.outbound.sendText is not defined');
+        }
         sendMessageMock.mockResolvedValue({ ok: false, error: 'DingTalk API error 300001: invalid robot code' });
 
         const cfg = {
@@ -71,13 +78,13 @@ describe('plugin outbound lifecycle', () => {
         };
 
         await expect(
-            dingtalkPlugin.outbound.sendText({
+            sendText({
                 cfg,
                 to: 'cidA1B2C3',
                 text: 'hello',
                 accountId: 'default',
-                log: undefined,
             })
         ).rejects.toThrow(/300001/);
     });
+
 });
