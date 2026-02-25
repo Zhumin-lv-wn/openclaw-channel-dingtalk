@@ -3,6 +3,7 @@ import axios from "axios";
 import { getAccessToken } from "./auth";
 import { stripTargetPrefix } from "./config";
 import { resolveOriginalPeerId } from "./peer-id-registry";
+import { formatDingTalkErrorPayloadLog } from "./utils";
 import type {
   AICardInstance,
   AICardStreamingRequest,
@@ -207,8 +208,12 @@ export async function createAICard(
   } catch (err: any) {
     log?.error?.(`[DingTalk][AICard] Create failed: ${err.message}`);
     if (err.response) {
+      const status = err.response.status;
+      const statusText = err.response.statusText;
+      const statusLabel = status ? ` status=${status}${statusText ? ` ${statusText}` : ""}` : "";
+      log?.error?.(`[DingTalk][AICard] Create error response${statusLabel}`);
       log?.error?.(
-        `[DingTalk][AICard] Error response: status=${err.response.status} data=${JSON.stringify(err.response.data)}`,
+        formatDingTalkErrorPayloadLog("card.create", err.response.data, "[DingTalk][AICard]"),
       );
     }
     return null;
@@ -322,14 +327,28 @@ export async function streamAICard(
         return;
       } catch (retryErr: any) {
         log?.error?.(`[DingTalk][AICard] Retry after token refresh failed: ${retryErr.message}`);
+        if (retryErr.response?.data !== undefined) {
+          log?.error?.(
+            formatDingTalkErrorPayloadLog(
+              "card.stream.retryAfterRefresh",
+              retryErr.response.data,
+              "[DingTalk][AICard]",
+            ),
+          );
+        }
       }
     }
 
     card.state = AICardStatus.FAILED;
     card.lastUpdated = Date.now();
     log?.error?.(
-      `[DingTalk][AICard] Streaming update failed: ${err.message}, resp=${JSON.stringify(err.response?.data)}`,
+      `[DingTalk][AICard] Streaming update failed: ${err.message}`,
     );
+    if (err.response?.data !== undefined) {
+      log?.error?.(
+        formatDingTalkErrorPayloadLog("card.stream", err.response.data, "[DingTalk][AICard]"),
+      );
+    }
     throw err;
   }
 }

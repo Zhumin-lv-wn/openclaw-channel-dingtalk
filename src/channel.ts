@@ -28,7 +28,7 @@ import type {
   ResolvedAccount,
 } from "./types";
 import { ConnectionState } from "./types";
-import { cleanupOrphanedTempFiles, getCurrentTimestamp } from "./utils";
+import { cleanupOrphanedTempFiles, formatDingTalkErrorPayloadLog, getCurrentTimestamp } from "./utils";
 
 const processingDedupKeys = new Set<string>();
 const inboundCountersByAccount = new Map<
@@ -187,6 +187,9 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
           typeof result.error === "string" ? result.error : JSON.stringify(result.error),
         );
       } catch (err: any) {
+        if (err?.response?.data !== undefined) {
+          log?.error?.(formatDingTalkErrorPayloadLog("outbound.sendText", err.response.data));
+        }
         throw new Error(
           typeof err?.response?.data === "string"
             ? err.response.data
@@ -261,6 +264,9 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
           typeof result.error === "string" ? result.error : JSON.stringify(result.error),
         );
       } catch (err: any) {
+        if (err?.response?.data !== undefined) {
+          log?.error?.(formatDingTalkErrorPayloadLog("outbound.sendMedia", err.response.data));
+        }
         throw new Error(
           typeof err?.response?.data === "string"
             ? err.response.data

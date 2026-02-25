@@ -20,7 +20,7 @@ import { getDingTalkRuntime } from "./runtime";
 import { sendBySession, sendMessage } from "./send-service";
 import type { DingTalkConfig, HandleDingTalkMessageParams, MediaFile } from "./types";
 import { AICardStatus } from "./types";
-import { maskSensitiveData } from "./utils";
+import { formatDingTalkErrorPayloadLog, maskSensitiveData } from "./utils";
 
 /**
  * Download DingTalk media file via runtime media service (sandbox-compatible).
@@ -97,7 +97,9 @@ export async function downloadMedia(
         log.error(
           `[DingTalk] Failed to download media:${statusLabel}${code} message=${err.message}`,
         );
-        if (dataDetail) {
+        if (err.response?.data !== undefined) {
+          log.error(formatDingTalkErrorPayloadLog("inbound.downloadMedia", err.response.data));
+        } else if (dataDetail) {
           log.error(`[DingTalk] downloadMedia response data: ${dataDetail}`);
         }
       } else {
@@ -168,6 +170,9 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
           );
         } catch (err: any) {
           log?.debug?.(`[DingTalk] Failed to send access denied message: ${err.message}`);
+          if (err?.response?.data !== undefined) {
+            log?.debug?.(formatDingTalkErrorPayloadLog("inbound.accessDeniedReply", err.response.data));
+          }
         }
 
         return;
@@ -202,6 +207,11 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
           );
         } catch (err: any) {
           log?.debug?.(`[DingTalk] Failed to send group access denied message: ${err.message}`);
+          if (err?.response?.data !== undefined) {
+            log?.debug?.(
+              formatDingTalkErrorPayloadLog("inbound.groupAccessDeniedReply", err.response.data),
+            );
+          }
         }
 
         return;
@@ -355,6 +365,9 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
       }
     } catch (err: any) {
       log?.debug?.(`[DingTalk] Thinking message failed: ${err.message}`);
+      if (err?.response?.data !== undefined) {
+        log?.debug?.(formatDingTalkErrorPayloadLog("inbound.thinkingMessage", err.response.data));
+      }
     }
   }
 
@@ -403,6 +416,9 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
           });
         } catch (err: any) {
           log?.error?.(`[DingTalk] Reply failed: ${err.message}`);
+          if (err?.response?.data !== undefined) {
+            log?.error?.(formatDingTalkErrorPayloadLog("inbound.replyDeliver", err.response.data));
+          }
           throw err;
         }
       },
@@ -427,6 +443,9 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
           await streamAICard(currentAICard, thinkingText, false, log);
         } catch (err: any) {
           log?.debug?.(`[DingTalk] Thinking stream update failed: ${err.message}`);
+          if (err?.response?.data !== undefined) {
+            log?.debug?.(formatDingTalkErrorPayloadLog("inbound.thinkingStream", err.response.data));
+          }
         }
       },
     },
@@ -465,6 +484,9 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
       }
     } catch (err: any) {
       log?.debug?.(`[DingTalk] AI Card finalization failed: ${err.message}`);
+      if (err?.response?.data !== undefined) {
+        log?.debug?.(formatDingTalkErrorPayloadLog("inbound.cardFinalize", err.response.data));
+      }
       try {
         if (currentAICard.state !== AICardStatus.FINISHED) {
           currentAICard.state = AICardStatus.FAILED;
