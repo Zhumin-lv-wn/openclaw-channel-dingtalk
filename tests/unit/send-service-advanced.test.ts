@@ -30,6 +30,10 @@ vi.mock('../../src/card-service', () => ({
 }));
 
 import { sendMessage } from '../../src/send-service';
+import {
+    clearProactiveRiskObservationsForTest,
+    recordProactiveRiskObservation,
+} from '../../src/proactive-risk-registry';
 import { AICardStatus } from '../../src/types';
 
 const mockedAxios = vi.mocked(axios);
@@ -37,6 +41,7 @@ const mockedAxios = vi.mocked(axios);
 describe('send-service advanced branches', () => {
     beforeEach(() => {
         mockedAxios.mockReset();
+        clearProactiveRiskObservationsForTest();
         cardMocks.getActiveCardIdByTargetMock.mockReset();
         cardMocks.getCardByIdMock.mockReset();
         cardMocks.isCardInTerminalStateMock.mockReset();
@@ -85,5 +90,32 @@ describe('send-service advanced branches', () => {
                     entry.includes('message=robotCode missing')
             )
         ).toBe(true);
+    });
+
+    it('includes proactive risk context in logs when proactive send fails', async () => {
+        recordProactiveRiskObservation({
+            accountId: 'main',
+            targetId: '0341234567',
+            level: 'high',
+            reason: 'numeric-user-id',
+            source: 'webhook-hint',
+        });
+
+        mockedAxios.mockRejectedValueOnce({
+            message: 'forbidden',
+            response: { status: 403, data: { code: 'Forbidden.AccessDenied.AccessTokenPermissionDenied' } },
+        });
+        const log = { error: vi.fn(), debug: vi.fn() };
+
+        const result = await sendMessage(
+            { clientId: 'id', clientSecret: 'sec', robotCode: 'id' } as any,
+            '0341234567',
+            'text',
+            { log: log as any, accountId: 'main' } as any,
+        );
+
+        expect(result).toEqual({ ok: false, error: 'forbidden' });
+        const logs = log.error.mock.calls.map((args: unknown[]) => String(args[0]));
+        expect(logs.some((entry) => entry.includes('proactiveRisk=high:numeric-user-id'))).toBe(true);
     });
 });

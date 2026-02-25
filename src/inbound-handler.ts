@@ -16,11 +16,60 @@ import { formatGroupMembers, noteGroupMember } from "./group-members-store";
 import { setCurrentLogger } from "./logger-context";
 import { extractMessageContent } from "./message-utils";
 import { registerPeerId } from "./peer-id-registry";
+import {
+  clearProactiveRiskObservationsForTest,
+  recordProactiveRiskObservation,
+} from "./proactive-risk-registry";
 import { getDingTalkRuntime } from "./runtime";
 import { sendBySession, sendMessage } from "./send-service";
 import type { DingTalkConfig, HandleDingTalkMessageParams, MediaFile } from "./types";
 import { AICardStatus } from "./types";
 import { formatDingTalkErrorPayloadLog, maskSensitiveData } from "./utils";
+
+const DEFAULT_PROACTIVE_HINT_COOLDOWN_HOURS = 24;
+const proactiveHintLastSentAt = new Map<string, number>();
+
+export function resetProactivePermissionHintStateForTest(): void {
+  proactiveHintLastSentAt.clear();
+  clearProactiveRiskObservationsForTest();
+}
+
+function shouldSendProactivePermissionHint(params: {
+  isDirect: boolean;
+  accountId: string;
+  senderId: string;
+  senderStaffId?: string;
+  config: DingTalkConfig;
+  nowMs: number;
+}): boolean {
+  if (!params.isDirect) {
+    return false;
+  }
+
+  const hintConfig = params.config.proactivePermissionHint;
+  if (hintConfig?.enabled === false) {
+    return false;
+  }
+
+  const targetId = (params.senderStaffId || params.senderId || "").trim();
+  if (!targetId || !/^\d+$/.test(targetId)) {
+    return false;
+  }
+
+  const cooldownHours =
+    hintConfig?.cooldownHours && hintConfig.cooldownHours > 0
+      ? hintConfig.cooldownHours
+      : DEFAULT_PROACTIVE_HINT_COOLDOWN_HOURS;
+  const cooldownMs = cooldownHours * 60 * 60 * 1000;
+  const key = `${params.accountId}:${targetId}`;
+  const lastSentAt = proactiveHintLastSentAt.get(key) || 0;
+  if (params.nowMs - lastSentAt < cooldownMs) {
+    return false;
+  }
+
+  proactiveHintLastSentAt.set(key, params.nowMs);
+  return true;
+}
 
 /**
  * Download DingTalk media file via runtime media service (sandbox-compatible).
@@ -143,8 +192,43 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
   if (groupId) {
     registerPeerId(groupId);
   }
+
+  if (
+    shouldSendProactivePermissionHint({
+      isDirect,
+      accountId,
+      senderId,
+      senderStaffId: data.senderStaffId,
+      config: dingtalkConfig,
+      nowMs: Date.now(),
+    })
+  ) {
+    try {
+      await sendBySession(
+        dingtalkConfig,
+        sessionWebhook,
+        `⚠️ 主动推送可能失败\n\n检测到当前用户标识为纯数字（\`${data.senderStaffId || senderId}\`）。企业内部机器人在定时/主动发送场景中，通常需要企业内部有效用户ID与完整授权。\n\n建议：\n1) 优先使用企业内部用户ID（如 managerXXXX）\n2) 确认应用已申请并获得主动发送相关权限\n3) 确认目标用户已加入机器人所属企业`,
+        { log },
+      );
+    } catch (err: any) {
+      log?.debug?.(`[DingTalk] Failed to send proactive permission hint: ${err.message}`);
+      if (err?.response?.data !== undefined) {
+        log?.debug?.(formatDingTalkErrorPayloadLog("inbound.proactivePermissionHint", err.response.data));
+      }
+    }
+  }
   if (senderId) {
     registerPeerId(senderId);
+  }
+
+  if (isDirect && /^\d+$/.test((data.senderStaffId || senderId || "").trim())) {
+    recordProactiveRiskObservation({
+      accountId,
+      targetId: data.senderStaffId || senderId,
+      level: "high",
+      reason: "numeric-user-id",
+      source: "webhook-hint",
+    });
   }
 
   // 2) Authorization guard (DM/group policy).

@@ -52,7 +52,11 @@ vi.mock('../../src/card-service', () => ({
     streamAICard: shared.streamAICardMock,
 }));
 
-import { downloadMedia, handleDingTalkMessage } from '../../src/inbound-handler';
+import {
+    downloadMedia,
+    handleDingTalkMessage,
+    resetProactivePermissionHintStateForTest,
+} from '../../src/inbound-handler';
 
 const mockedAxiosPost = vi.mocked(axios.post);
 const mockedAxiosGet = vi.mocked(axios.get);
@@ -104,6 +108,7 @@ describe('inbound-handler', () => {
 
         shared.getRuntimeMock.mockReturnValue(buildRuntime());
         shared.extractMessageContentMock.mockReturnValue({ text: 'hello', messageType: 'text' });
+        resetProactivePermissionHintStateForTest();
         shared.createAICardMock.mockResolvedValue({
             cardInstanceId: 'card_1',
             state: '1',
@@ -445,5 +450,71 @@ describe('inbound-handler', () => {
         expect(shared.createAICardMock).not.toHaveBeenCalled();
         expect(shared.streamAICardMock).toHaveBeenCalled();
         expect(shared.finishAICardMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('sends proactive permission hint for numeric senderStaffId in direct chat', async () => {
+        shared.sendBySessionMock.mockResolvedValue(undefined);
+
+        await handleDingTalkMessage({
+            cfg: {},
+            accountId: 'main',
+            sessionWebhook: 'https://session.webhook',
+            log: undefined,
+            dingtalkConfig: {
+                dmPolicy: 'open',
+                messageType: 'markdown',
+                showThinking: false,
+                proactivePermissionHint: { enabled: true, cooldownHours: 24 },
+            } as any,
+            data: {
+                msgId: 'm9',
+                msgtype: 'text',
+                text: { content: 'hello' },
+                conversationType: '1',
+                conversationId: 'cid_ok',
+                senderId: 'manager123',
+                senderStaffId: '0341234567',
+                chatbotUserId: 'bot_1',
+                sessionWebhook: 'https://session.webhook',
+                createAt: Date.now(),
+            },
+        } as any);
+
+        expect(shared.sendBySessionMock).toHaveBeenCalledTimes(1);
+        expect(String(shared.sendBySessionMock.mock.calls[0]?.[2])).toContain('主动推送可能失败');
+    });
+
+    it('sends proactive permission hint only once within cooldown window', async () => {
+        shared.sendBySessionMock.mockResolvedValue(undefined);
+
+        const params = {
+            cfg: {},
+            accountId: 'main',
+            sessionWebhook: 'https://session.webhook',
+            log: undefined,
+            dingtalkConfig: {
+                dmPolicy: 'open',
+                messageType: 'markdown',
+                showThinking: false,
+                proactivePermissionHint: { enabled: true, cooldownHours: 24 },
+            } as any,
+            data: {
+                msgId: 'm10',
+                msgtype: 'text',
+                text: { content: 'hello' },
+                conversationType: '1',
+                conversationId: 'cid_ok',
+                senderId: 'manager123',
+                senderStaffId: '0341234567',
+                chatbotUserId: 'bot_1',
+                sessionWebhook: 'https://session.webhook',
+                createAt: Date.now(),
+            },
+        } as any;
+
+        await handleDingTalkMessage(params);
+        await handleDingTalkMessage(params);
+
+        expect(shared.sendBySessionMock).toHaveBeenCalledTimes(1);
     });
 });

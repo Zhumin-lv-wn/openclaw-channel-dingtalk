@@ -52,6 +52,10 @@ export interface DingTalkConfig extends OpenClawConfig {
   initialReconnectDelay?: number;
   maxReconnectDelay?: number;
   reconnectJitter?: number;
+  proactivePermissionHint?: {
+    enabled?: boolean;
+    cooldownHours?: number;
+  };
 }
 
 /**
@@ -79,6 +83,10 @@ export interface DingTalkChannelConfig {
   initialReconnectDelay?: number;
   maxReconnectDelay?: number;
   reconnectJitter?: number;
+  proactivePermissionHint?: {
+    enabled?: boolean;
+    cooldownHours?: number;
+  };
 }
 
 /**
@@ -201,6 +209,7 @@ export interface SendMessageOptions {
   filePath?: string;
   mediaUrl?: string;
   mediaType?: "image" | "voice" | "video" | "file";
+  accountId?: string;
 }
 
 /**
@@ -551,6 +560,7 @@ export function resolveDingTalkAccount(
       initialReconnectDelay: dingtalk?.initialReconnectDelay,
       maxReconnectDelay: dingtalk?.maxReconnectDelay,
       reconnectJitter: dingtalk?.reconnectJitter,
+      proactivePermissionHint: dingtalk?.proactivePermissionHint,
     };
     return {
       ...config,

@@ -13,6 +13,7 @@ import { getLogger } from "./logger-context";
 import { uploadMedia as uploadMediaUtil } from "./media-utils";
 import { detectMarkdownAndExtractTitle } from "./message-utils";
 import { resolveOriginalPeerId } from "./peer-id-registry";
+import { getProactiveRiskObservation } from "./proactive-risk-registry";
 import { formatDingTalkErrorPayloadLog } from "./utils";
 import type {
   AxiosResponse,
@@ -51,6 +52,12 @@ export async function sendProactiveTextOrMarkdown(
   const { targetId, isExplicitUser } = stripTargetPrefix(target);
   const resolvedTarget = resolveOriginalPeerId(targetId);
   const isGroup = !isExplicitUser && resolvedTarget.startsWith("cid");
+  const proactiveRisk = options.accountId
+    ? getProactiveRiskObservation(options.accountId, resolvedTarget)
+    : null;
+  const proactiveRiskTag = proactiveRisk
+    ? ` proactiveRisk=${proactiveRisk.level}:${proactiveRisk.reason}`
+    : "";
 
   const url = isGroup
     ? "https://api.dingtalk.com/v1.0/robot/groupMessages/send"
@@ -59,7 +66,7 @@ export async function sendProactiveTextOrMarkdown(
   const { useMarkdown, title } = detectMarkdownAndExtractTitle(text, options, "OpenClaw 提醒");
 
   log?.debug?.(
-    `[DingTalk] Sending proactive message to ${isGroup ? "group" : "user"} ${resolvedTarget} with title "${title}"`,
+    `[DingTalk] Sending proactive message to ${isGroup ? "group" : "user"} ${resolvedTarget} with title "${title}"${proactiveRiskTag}`,
   );
 
   // DingTalk proactive API uses message templates (sampleMarkdown / sampleText).
@@ -100,7 +107,7 @@ export async function sendProactiveTextOrMarkdown(
       log?.error?.(
         `[DingTalk] Failed to send proactive message:${statusLabel} message=${
           maybeAxiosError.message || String(err)
-        }`,
+        }${proactiveRiskTag}`,
       );
       if (maybeAxiosError.response.data !== undefined) {
         log?.error?.(
@@ -188,11 +195,18 @@ export async function sendProactiveMedia(
     return { ok: true, data: result.data, messageId };
   } catch (err: any) {
     log?.error?.(`[DingTalk] Failed to send proactive media: ${err.message}`);
+    const normalizedTarget = resolveOriginalPeerId(stripTargetPrefix(target).targetId);
+    const proactiveRisk = options.accountId
+      ? getProactiveRiskObservation(options.accountId, normalizedTarget)
+      : null;
+    const proactiveRiskTag = proactiveRisk
+      ? ` proactiveRisk=${proactiveRisk.level}:${proactiveRisk.reason}`
+      : "";
     if (axios.isAxiosError(err) && err.response) {
       const status = err.response.status;
       const statusText = err.response.statusText;
       const statusLabel = status ? ` status=${status}${statusText ? ` ${statusText}` : ""}` : "";
-      log?.error?.(`[DingTalk] Proactive media response${statusLabel}`);
+      log?.error?.(`[DingTalk] Proactive media response${statusLabel}${proactiveRiskTag}`);
       log?.error?.(formatDingTalkErrorPayloadLog("send.proactiveMedia", err.response.data));
     }
     return { ok: false, error: err.message };
