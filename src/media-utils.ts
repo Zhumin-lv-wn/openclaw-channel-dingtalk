@@ -11,6 +11,7 @@ import * as path from "path";
 import axios from "axios";
 import FormData from "form-data";
 import type { DingTalkConfig, Logger } from "./types";
+import { formatDingTalkErrorPayloadLog } from "./utils";
 
 export type DingTalkMediaType = "image" | "voice" | "video" | "file";
 
@@ -123,7 +124,11 @@ export async function uploadMedia(
     } else {
       log?.error?.(`[DingTalk] Failed to upload media: ${err.message}`);
       if (axios.isAxiosError(err) && err.response) {
-        log?.error?.(`[DingTalk] Upload response: ${JSON.stringify(err.response.data)}`);
+        const status = err.response.status;
+        const statusText = err.response.statusText;
+        const statusLabel = status ? ` status=${status}${statusText ? ` ${statusText}` : ""}` : "";
+        log?.error?.(`[DingTalk] Upload response${statusLabel}`);
+        log?.error?.(formatDingTalkErrorPayloadLog("media.upload", err.response.data));
       }
     }
     return null;

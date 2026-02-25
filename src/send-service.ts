@@ -13,6 +13,7 @@ import { getLogger } from "./logger-context";
 import { uploadMedia as uploadMediaUtil } from "./media-utils";
 import { detectMarkdownAndExtractTitle } from "./message-utils";
 import { resolveOriginalPeerId } from "./peer-id-registry";
+import { formatDingTalkErrorPayloadLog } from "./utils";
 import type {
   AxiosResponse,
   DingTalkConfig,
@@ -43,8 +44,8 @@ export async function sendProactiveTextOrMarkdown(
   text: string,
   options: SendMessageOptions = {},
 ): Promise<AxiosResponse> {
-  const token = await getAccessToken(config, options.log);
   const log = options.log || getLogger();
+  const token = await getAccessToken(config, log);
 
   // Support group:/user: prefix and restore original case-sensitive conversationId.
   const { targetId, isExplicitUser } = stripTargetPrefix(target);
@@ -79,13 +80,40 @@ export async function sendProactiveTextOrMarkdown(
     payload.userIds = [resolvedTarget];
   }
 
-  const result = await axios({
-    url,
-    method: "POST",
-    data: payload,
-    headers: { "x-acs-dingtalk-access-token": token, "Content-Type": "application/json" },
-  });
-  return result.data;
+  try {
+    const result = await axios({
+      url,
+      method: "POST",
+      data: payload,
+      headers: { "x-acs-dingtalk-access-token": token, "Content-Type": "application/json" },
+    });
+    return result.data;
+  } catch (err: unknown) {
+    const maybeAxiosError = err as {
+      response?: { status?: number; statusText?: string; data?: unknown };
+      message?: string;
+    };
+    if (maybeAxiosError?.response) {
+      const status = maybeAxiosError.response.status;
+      const statusText = maybeAxiosError.response.statusText;
+      const statusLabel = status ? ` status=${status}${statusText ? ` ${statusText}` : ""}` : "";
+      log?.error?.(
+        `[DingTalk] Failed to send proactive message:${statusLabel} message=${
+          maybeAxiosError.message || String(err)
+        }`,
+      );
+      if (maybeAxiosError.response.data !== undefined) {
+        log?.error?.(
+          formatDingTalkErrorPayloadLog("send.proactiveMessage", maybeAxiosError.response.data),
+        );
+      }
+    } else if (err instanceof Error) {
+      log?.error?.(`[DingTalk] Failed to send proactive message: ${err.message}`);
+    } else {
+      log?.error?.(`[DingTalk] Failed to send proactive message: ${String(err)}`);
+    }
+    throw err;
+  }
 }
 
 export async function sendProactiveMedia(
@@ -161,7 +189,11 @@ export async function sendProactiveMedia(
   } catch (err: any) {
     log?.error?.(`[DingTalk] Failed to send proactive media: ${err.message}`);
     if (axios.isAxiosError(err) && err.response) {
-      log?.error?.(`[DingTalk] Response: ${JSON.stringify(err.response.data)}`);
+      const status = err.response.status;
+      const statusText = err.response.statusText;
+      const statusLabel = status ? ` status=${status}${statusText ? ` ${statusText}` : ""}` : "";
+      log?.error?.(`[DingTalk] Proactive media response${statusLabel}`);
+      log?.error?.(formatDingTalkErrorPayloadLog("send.proactiveMedia", err.response.data));
     }
     return { ok: false, error: err.message };
   }
@@ -276,6 +308,9 @@ export async function sendMessage(
     return { ok: true, data: result };
   } catch (err: any) {
     options.log?.error?.(`[DingTalk] Send message failed: ${err.message}`);
+    if (err?.response?.data !== undefined) {
+      options.log?.error?.(formatDingTalkErrorPayloadLog("send.message", err.response.data));
+    }
     return { ok: false, error: err.message };
   }
 }

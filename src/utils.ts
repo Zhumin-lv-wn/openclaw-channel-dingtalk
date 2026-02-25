@@ -38,6 +38,55 @@ export function maskSensitiveData(data: unknown): any {
   return masked;
 }
 
+export function formatDingTalkErrorPayload(payload: unknown): string {
+  if (payload === null || payload === undefined) {
+    return "payload=unknown";
+  }
+
+  let code: string | undefined;
+  let message: string | undefined;
+  if (typeof payload === "object" && !Array.isArray(payload)) {
+    const obj = payload as Record<string, unknown>;
+    if (typeof obj.code === "string" || typeof obj.code === "number") {
+      code = String(obj.code);
+    }
+    if (typeof obj.message === "string") {
+      message = obj.message;
+    }
+  }
+
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(maskSensitiveData(payload));
+  } catch {
+    if (typeof payload === "string") {
+      serialized = payload;
+    } else if (typeof payload === "number" || typeof payload === "boolean" || typeof payload === "bigint") {
+      serialized = `${payload}`;
+    } else {
+      serialized = "[unserializable-payload]";
+    }
+  }
+
+  const parts: string[] = [];
+  if (code) {
+    parts.push(`code=${code}`);
+  }
+  if (message) {
+    parts.push(`message=${message}`);
+  }
+  parts.push(`payload=${serialized}`);
+  return parts.join(" ");
+}
+
+export function formatDingTalkErrorPayloadLog(
+  scope: string,
+  payload: unknown,
+  prefix: "[DingTalk]" | "[DingTalk][AICard]" = "[DingTalk]",
+): string {
+  return `${prefix}[ErrorPayload][${scope}] ${formatDingTalkErrorPayload(payload)}`;
+}
+
 /**
  * Cleanup orphaned temp files from dingtalk media
  * Run at startup to clean up files from crashed processes
@@ -97,6 +146,10 @@ export async function retryWithBackoff<T>(
       const statusCode = err.response?.status;
       const isRetryable =
         statusCode === 401 || statusCode === 429 || (statusCode && statusCode >= 500);
+
+      if (err.response?.data !== undefined) {
+        log?.debug?.(formatDingTalkErrorPayloadLog("retry.beforeDecision", err.response.data));
+      }
 
       if (!isRetryable || attempt === maxRetries) {
         throw err;
