@@ -2,12 +2,9 @@ import axios from "axios";
 import { normalizeAllowFrom, isSenderAllowed, isSenderGroupAllowed } from "./access-control";
 import { getAccessToken } from "./auth";
 import {
-  cleanupCardCache,
   createAICard,
   finishAICard,
   formatContentForCard,
-  getActiveCardIdByTarget,
-  getCardById,
   isCardInTerminalState,
   streamAICard,
 } from "./card-service";
@@ -184,9 +181,6 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
   setCurrentLogger(log);
 
   log?.debug?.("[DingTalk] Full Inbound Data:", JSON.stringify(maskSensitiveData(data)));
-
-  // Clean up old terminal cards opportunistically on inbound traffic.
-  cleanupCardCache();
 
   // 1) Ignore self messages from bot.
   if (data.senderId === data.chatbotUserId || data.senderStaffId === data.chatbotUserId) {
@@ -413,29 +407,19 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
   let lastCardContent = "";
 
   if (useCardMode) {
-    const targetKey = `${accountId}:${to}`;
-    const existingCardId = getActiveCardIdByTarget(targetKey);
-    const existingCard = existingCardId ? getCardById(existingCardId) : undefined;
-
-    // Reuse active non-terminal card to keep one card per conversation.
-    if (existingCard && !isCardInTerminalState(existingCard.state)) {
-      currentAICard = existingCard;
-      log?.debug?.("[DingTalk] Reusing existing active AI card for this conversation.");
-    } else {
-      try {
-        const aiCard = await createAICard(dingtalkConfig, to, data, accountId, log);
-        if (aiCard) {
-          currentAICard = aiCard;
-        } else {
-          log?.warn?.(
-            "[DingTalk] Failed to create AI card (returned null), fallback to text/markdown.",
-          );
-        }
-      } catch (err: any) {
+    try {
+      const aiCard = await createAICard(dingtalkConfig, to, data, log);
+      if (aiCard) {
+        currentAICard = aiCard;
+      } else {
         log?.warn?.(
-          `[DingTalk] Failed to create AI card: ${err.message}, fallback to text/markdown.`,
+          "[DingTalk] Failed to create AI card (returned null), fallback to text/markdown.",
         );
       }
+    } catch (err: any) {
+      log?.warn?.(
+        `[DingTalk] Failed to create AI card: ${err.message}, fallback to text/markdown.`,
+      );
     }
   }
 
@@ -451,7 +435,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
           sessionWebhook,
           atUserId: !isDirect ? senderId : null,
           log,
-          accountId,
+          card: currentAICard,
         });
       }
     } catch (err: any) {
@@ -508,7 +492,7 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
             sessionWebhook,
             atUserId: !isDirect ? senderId : null,
             log,
-            accountId,
+            card: currentAICard,
           });
         } catch (err: any) {
           log?.error?.(`[DingTalk] Reply failed: ${err.message}`);

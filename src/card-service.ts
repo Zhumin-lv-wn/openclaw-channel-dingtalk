@@ -14,47 +14,12 @@ import type {
 import { AICardStatus } from "./types";
 
 const DINGTALK_API = "https://api.dingtalk.com";
-// Card cache TTL (1 hour) for terminal states.
-const CARD_CACHE_TTL = 60 * 60 * 1000;
 // Thinking/tool stream snippets are truncated to keep card updates compact.
 const THINKING_TRUNCATE_LENGTH = 500;
-
-// AI Card instance cache for streaming updates.
-const aiCardInstances = new Map<string, AICardInstance>();
-// accountId:conversationId -> cardInstanceId
-const activeCardsByTarget = new Map<string, string>();
 
 // Helper to identify card terminal states.
 export function isCardInTerminalState(state: string): boolean {
   return state === AICardStatus.FINISHED || state === AICardStatus.FAILED;
-}
-
-export function getCardById(cardId: string): AICardInstance | undefined {
-  return aiCardInstances.get(cardId);
-}
-
-export function getActiveCardIdByTarget(targetKey: string): string | undefined {
-  return activeCardsByTarget.get(targetKey);
-}
-
-export function deleteActiveCardByTarget(targetKey: string): void {
-  activeCardsByTarget.delete(targetKey);
-}
-
-export function cleanupCardCache(): void {
-  const now = Date.now();
-  // Clean terminal cards only; active cards stay in cache to support streaming continuity.
-  for (const [cardInstanceId, instance] of aiCardInstances.entries()) {
-    if (isCardInTerminalState(instance.state) && now - instance.lastUpdated > CARD_CACHE_TTL) {
-      aiCardInstances.delete(cardInstanceId);
-      for (const [targetKey, mappedCardId] of activeCardsByTarget.entries()) {
-        if (mappedCardId === cardInstanceId) {
-          activeCardsByTarget.delete(targetKey);
-          break;
-        }
-      }
-    }
-  }
 }
 
 export function formatContentForCard(content: string, type: "thinking" | "tool"): string {
@@ -126,7 +91,6 @@ export async function createAICard(
   config: DingTalkConfig,
   conversationId: string,
   data: DingTalkInboundMessage,
-  accountId: string,
   log?: Logger,
 ): Promise<AICardInstance | null> {
   try {
@@ -186,7 +150,7 @@ export async function createAICard(
       `[DingTalk][AICard] CreateAndDeliver response: status=${resp.status} data=${JSON.stringify(resp.data)}`,
     );
 
-    // Cache the AI card instance with config reference for token refresh/recovery.
+    // Return the AI card instance with config reference for token refresh/recovery.
     const aiCardInstance: AICardInstance = {
       cardInstanceId,
       accessToken: token,
@@ -196,13 +160,6 @@ export async function createAICard(
       state: AICardStatus.PROCESSING,
       config,
     };
-    aiCardInstances.set(cardInstanceId, aiCardInstance);
-
-    const targetKey = `${accountId}:${conversationId}`;
-    activeCardsByTarget.set(targetKey, cardInstanceId);
-    log?.debug?.(
-      `[DingTalk][AICard] Registered active card mapping: ${targetKey} -> ${cardInstanceId}`,
-    );
 
     return aiCardInstance;
   } catch (err: any) {

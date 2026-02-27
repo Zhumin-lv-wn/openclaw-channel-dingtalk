@@ -16,12 +16,9 @@ vi.mock('axios', () => {
 });
 
 import {
-    cleanupCardCache,
     createAICard,
     finishAICard,
     formatContentForCard,
-    getActiveCardIdByTarget,
-    getCardById,
     streamAICard,
 } from '../../src/card-service';
 import { getAccessToken } from '../../src/auth';
@@ -39,14 +36,13 @@ describe('card-service', () => {
         mockedGetAccessToken.mockResolvedValue('token_abc');
     });
 
-    it('createAICard returns card instance and caches mapping', async () => {
+    it('createAICard returns card instance', async () => {
         mockedAxios.post.mockResolvedValueOnce({ status: 200, data: { ok: true } });
 
         const card = await createAICard(
             { clientId: 'id', clientSecret: 'sec', cardTemplateId: 'tmpl.schema', robotCode: 'id' } as any,
             'cidA1B2C3',
-            { conversationType: '2' } as any,
-            'main'
+            { conversationType: '2' } as any
         );
 
         expect(card).toBeTruthy();
@@ -58,8 +54,7 @@ describe('card-service', () => {
         const card = await createAICard(
             { clientId: 'id', clientSecret: 'sec' } as any,
             'cidA1B2C3',
-            { conversationType: '2' } as any,
-            'main'
+            { conversationType: '2' } as any
         );
 
         expect(card).toBeNull();
@@ -191,30 +186,6 @@ describe('card-service', () => {
         expect(result).toContain('思考中');
         expect(result).toContain('> ');
         expect(result.endsWith('…')).toBe(true);
-    });
-
-    it('cleanupCardCache removes expired terminal cards and active mapping', async () => {
-        mockedAxios.post.mockResolvedValueOnce({ status: 200, data: { ok: true } });
-
-        const card = await createAICard(
-            { clientId: 'id', clientSecret: 'sec', cardTemplateId: 'tmpl.schema', robotCode: 'id' } as any,
-            'cid_old',
-            { conversationType: '2' } as any,
-            'main'
-        );
-
-        expect(card).toBeTruthy();
-        if (!card) {
-            return;
-        }
-
-        card.state = AICardStatus.FINISHED;
-        card.lastUpdated = Date.now() - 2 * 60 * 60 * 1000;
-
-        cleanupCardCache();
-
-        expect(getCardById(card.cardInstanceId)).toBeUndefined();
-        expect(getActiveCardIdByTarget('main:cid_old')).toBeUndefined();
     });
 
     it('refreshes aged token before streaming', async () => {

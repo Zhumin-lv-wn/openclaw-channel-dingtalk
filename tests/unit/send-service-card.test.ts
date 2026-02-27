@@ -2,11 +2,8 @@ import axios from 'axios';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const cardMocks = vi.hoisted(() => ({
-    getActiveCardIdByTargetMock: vi.fn(),
-    getCardByIdMock: vi.fn(),
     isCardInTerminalStateMock: vi.fn(),
     streamAICardMock: vi.fn(),
-    deleteActiveCardByTargetMock: vi.fn(),
 }));
 
 vi.mock('../../src/auth', () => ({
@@ -19,11 +16,8 @@ vi.mock('axios', () => ({
 }));
 
 vi.mock('../../src/card-service', () => ({
-    getActiveCardIdByTarget: cardMocks.getActiveCardIdByTargetMock,
-    getCardById: cardMocks.getCardByIdMock,
     isCardInTerminalState: cardMocks.isCardInTerminalStateMock,
     streamAICard: cardMocks.streamAICardMock,
-    deleteActiveCardByTarget: cardMocks.deleteActiveCardByTargetMock,
 }));
 
 import { sendMessage } from '../../src/send-service';
@@ -34,17 +28,12 @@ const mockedAxios = vi.mocked(axios);
 describe('sendMessage card mode', () => {
     beforeEach(() => {
         mockedAxios.mockReset();
-        cardMocks.getActiveCardIdByTargetMock.mockReset();
-        cardMocks.getCardByIdMock.mockReset();
         cardMocks.isCardInTerminalStateMock.mockReset();
         cardMocks.streamAICardMock.mockReset();
-        cardMocks.deleteActiveCardByTargetMock.mockReset();
     });
 
-    it('streams into active card when card is alive', async () => {
+    it('streams into provided card when card is alive', async () => {
         const card = { cardInstanceId: 'card_1', state: AICardStatus.PROCESSING, lastUpdated: Date.now() } as any;
-        cardMocks.getActiveCardIdByTargetMock.mockReturnValue('card_1');
-        cardMocks.getCardByIdMock.mockReturnValue(card);
         cardMocks.isCardInTerminalStateMock.mockReturnValue(false);
         cardMocks.streamAICardMock.mockResolvedValue(undefined);
 
@@ -52,7 +41,7 @@ describe('sendMessage card mode', () => {
             { clientId: 'id', clientSecret: 'sec', messageType: 'card', robotCode: 'id' } as any,
             'cidA1B2C3',
             'stream content',
-            { accountId: 'main' }
+            { card }
         );
 
         expect(cardMocks.streamAICardMock).toHaveBeenCalledTimes(1);
@@ -62,8 +51,6 @@ describe('sendMessage card mode', () => {
 
     it('falls back to proactive markdown when stream fails', async () => {
         const card = { cardInstanceId: 'card_1', state: AICardStatus.PROCESSING, lastUpdated: Date.now() } as any;
-        cardMocks.getActiveCardIdByTargetMock.mockReturnValue('card_1');
-        cardMocks.getCardByIdMock.mockReturnValue(card);
         cardMocks.isCardInTerminalStateMock.mockReturnValue(false);
         cardMocks.streamAICardMock.mockRejectedValue(new Error('stream failed'));
         mockedAxios.mockResolvedValue({ data: { processQueryKey: 'q_123' } } as any);
@@ -72,7 +59,7 @@ describe('sendMessage card mode', () => {
             { clientId: 'id', clientSecret: 'sec', messageType: 'card', robotCode: 'id' } as any,
             'cidA1B2C3',
             'fallback content',
-            { accountId: 'main' }
+            { card }
         );
 
         expect(card.state).toBe(AICardStatus.FAILED);

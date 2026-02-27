@@ -6,13 +6,10 @@ const shared = vi.hoisted(() => ({
     sendMessageMock: vi.fn(),
     extractMessageContentMock: vi.fn(),
     getRuntimeMock: vi.fn(),
-    cleanupCardCacheMock: vi.fn(),
     createAICardMock: vi.fn(),
     finishAICardMock: vi.fn(),
     streamAICardMock: vi.fn(),
     formatContentForCardMock: vi.fn((s: string) => s),
-    getActiveCardIdByTargetMock: vi.fn(),
-    getCardByIdMock: vi.fn(),
     isCardInTerminalStateMock: vi.fn(),
 }));
 
@@ -42,12 +39,9 @@ vi.mock('../../src/send-service', () => ({
 }));
 
 vi.mock('../../src/card-service', () => ({
-    cleanupCardCache: shared.cleanupCardCacheMock,
     createAICard: shared.createAICardMock,
     finishAICard: shared.finishAICardMock,
     formatContentForCard: shared.formatContentForCardMock,
-    getActiveCardIdByTarget: shared.getActiveCardIdByTargetMock,
-    getCardById: shared.getCardByIdMock,
     isCardInTerminalState: shared.isCardInTerminalStateMock,
     streamAICard: shared.streamAICardMock,
 }));
@@ -99,12 +93,9 @@ describe('inbound-handler', () => {
         shared.sendBySessionMock.mockReset();
         shared.sendMessageMock.mockReset();
         shared.extractMessageContentMock.mockReset();
-        shared.cleanupCardCacheMock.mockReset();
         shared.createAICardMock.mockReset();
         shared.finishAICardMock.mockReset();
         shared.streamAICardMock.mockReset();
-        shared.getActiveCardIdByTargetMock.mockReset();
-        shared.getCardByIdMock.mockReset();
         shared.isCardInTerminalStateMock.mockReset();
 
         shared.getRuntimeMock.mockReturnValue(buildRuntime());
@@ -402,14 +393,13 @@ describe('inbound-handler', () => {
         ).toBe(true);
     });
 
-    it('handleDingTalkMessage group card flow reuses active card and streams tool/reasoning', async () => {
+    it('handleDingTalkMessage group card flow creates card and streams tool/reasoning', async () => {
         const runtime = buildRuntime();
         shared.getRuntimeMock.mockReturnValueOnce(runtime);
 
-        const activeCard = { cardInstanceId: 'card_active', state: '2', lastUpdated: Date.now() } as any;
-        shared.getActiveCardIdByTargetMock.mockReturnValueOnce('card_active');
-        shared.getCardByIdMock.mockReturnValueOnce(activeCard);
-        shared.isCardInTerminalStateMock.mockReturnValueOnce(false);
+        const createdCard = { cardInstanceId: 'card_new', state: '1', lastUpdated: Date.now() } as any;
+        shared.createAICardMock.mockResolvedValueOnce(createdCard);
+        shared.isCardInTerminalStateMock.mockReturnValue(false);
         shared.extractMessageContentMock.mockReturnValueOnce({
             text: 'group hello',
             mediaPath: 'download_code_1',
@@ -448,8 +438,7 @@ describe('inbound-handler', () => {
             },
         } as any);
 
-        expect(shared.createAICardMock).not.toHaveBeenCalled();
-        expect(shared.streamAICardMock).toHaveBeenCalled();
+        expect(shared.createAICardMock).toHaveBeenCalledTimes(1);
         expect(shared.finishAICardMock).toHaveBeenCalledTimes(1);
     });
 

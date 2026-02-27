@@ -2,9 +2,6 @@ import * as path from "node:path";
 import axios from "axios";
 import { getAccessToken } from "./auth";
 import {
-  deleteActiveCardByTarget,
-  getActiveCardIdByTarget,
-  getCardById,
   isCardInTerminalState,
   streamAICard,
 } from "./card-service";
@@ -20,6 +17,7 @@ import {
 } from "./proactive-risk-registry";
 import { formatDingTalkErrorPayloadLog } from "./utils";
 import type {
+  AICardInstance,
   AxiosResponse,
   DingTalkConfig,
   Logger,
@@ -345,32 +343,26 @@ export async function sendMessage(
   config: DingTalkConfig,
   conversationId: string,
   text: string,
-  options: SendMessageOptions & { sessionWebhook?: string; accountId?: string } = {},
+  options: SendMessageOptions & { sessionWebhook?: string; card?: AICardInstance } = {},
 ): Promise<{ ok: boolean; error?: string; data?: AxiosResponse }> {
   try {
     const messageType = config.messageType || "markdown";
     const log = options.log || getLogger();
 
-    // Card mode: stream into active card if exists; otherwise fallback to markdown/session send.
-    if (messageType === "card" && options.accountId) {
-      const targetKey = `${options.accountId}:${conversationId}`;
-      const activeCardId = getActiveCardIdByTarget(targetKey);
-      if (activeCardId) {
-        const activeCard = getCardById(activeCardId);
-        if (activeCard && !isCardInTerminalState(activeCard.state)) {
-          try {
-            await streamAICard(activeCard, text, false, log);
-            return { ok: true };
-          } catch (err: any) {
-            // Mark failed and continue to markdown fallback to avoid message loss.
-            log?.warn?.(
-              `[DingTalk] AI Card streaming failed, fallback to markdown: ${err.message}`,
-            );
-            activeCard.state = AICardStatus.FAILED;
-            activeCard.lastUpdated = Date.now();
-          }
-        } else {
-          deleteActiveCardByTarget(targetKey);
+    // Card mode: stream into the provided card if exists and active.
+    if (messageType === "card" && options.card) {
+      const card = options.card;
+      if (!isCardInTerminalState(card.state)) {
+        try {
+          await streamAICard(card, text, false, log);
+          return { ok: true };
+        } catch (err: any) {
+          // Mark failed and continue to markdown fallback to avoid message loss.
+          log?.warn?.(
+            `[DingTalk] AI Card streaming failed, fallback to markdown: ${err.message}`,
+          );
+          card.state = AICardStatus.FAILED;
+          card.lastUpdated = Date.now();
         }
       }
     }
