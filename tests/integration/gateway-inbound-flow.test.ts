@@ -107,7 +107,7 @@ describe('gateway inbound callback pipeline', () => {
         shared.isConnectedMock.mockReturnValue(false);
     });
 
-    it('acknowledges callback and dispatches non-duplicate message', async () => {
+    it('acknowledges callback after successful dispatch for non-duplicate message', async () => {
         shared.isMessageProcessedMock.mockReturnValue(false);
         const ctx = createStartContext();
 
@@ -129,6 +129,7 @@ describe('gateway inbound callback pipeline', () => {
             }),
         });
 
+        expect(shared.socketCallBackResponseMock).toHaveBeenCalledTimes(1);
         expect(shared.socketCallBackResponseMock).toHaveBeenCalledWith('stream_msg_1', { success: true });
         expect(shared.markMessageProcessedMock).toHaveBeenCalledWith('robot_1:msg_1');
         expect(shared.handleDingTalkMessageMock).toHaveBeenCalledTimes(1);
@@ -192,12 +193,31 @@ describe('gateway inbound callback pipeline', () => {
 
         await shared.listener?.(payload);
         expect(shared.markMessageProcessedMock).not.toHaveBeenCalled();
+        expect(shared.socketCallBackResponseMock).not.toHaveBeenCalled();
         expect(ctx.log.info).toHaveBeenCalledWith(expect.stringContaining('Inbound counters (failed)'));
 
         await shared.listener?.(payload);
         expect(shared.handleDingTalkMessageMock).toHaveBeenCalledTimes(2);
         expect(shared.markMessageProcessedMock).toHaveBeenCalledTimes(1);
         expect(shared.markMessageProcessedMock).toHaveBeenCalledWith('robot_1:msg_retry');
+        expect(shared.socketCallBackResponseMock).toHaveBeenCalledTimes(1);
+        expect(shared.socketCallBackResponseMock).toHaveBeenCalledWith('stream_msg_retry', { success: true });
+    });
+
+    it('does not acknowledge malformed payloads when parse fails', async () => {
+        shared.isMessageProcessedMock.mockReturnValue(false);
+        const ctx = createStartContext();
+
+        await startGatewayAccount(ctx as any);
+
+        await shared.listener?.({
+            headers: { messageId: 'stream_msg_bad' },
+            data: '{"msgId":',
+        });
+
+        expect(shared.socketCallBackResponseMock).not.toHaveBeenCalled();
+        expect(shared.handleDingTalkMessageMock).not.toHaveBeenCalled();
+        expect(ctx.log.info).toHaveBeenCalledWith(expect.stringContaining('Inbound counters (failed)'));
     });
 
     it('skips concurrent in-flight duplicate callbacks for same message', async () => {

@@ -292,7 +292,7 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
         clientId: config.clientId,
         clientSecret: config.clientSecret,
         debug: config.debug || false,
-        keepAlive: true,
+        keepAlive: false,
       });
 
       // Disable built-in reconnect so ConnectionManager owns all retry/backoff behavior.
@@ -302,11 +302,20 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
         const messageId = res.headers?.messageId;
         const stats = getInboundCounters(account.accountId);
         stats.received += 1;
-        try {
-          if (messageId) {
+        const acknowledge = () => {
+          if (!messageId) {
+            return;
+          }
+          try {
             client.socketCallBackResponse(messageId, { success: true });
             stats.acked += 1;
+          } catch (ackError: any) {
+            ctx.log?.warn?.(
+              `[${account.accountId}] Failed to acknowledge callback ${messageId}: ${ackError.message}`,
+            );
           }
+        };
+        try {
           const data = JSON.parse(res.data) as DingTalkInboundMessage;
 
           // Message deduplication key is bot-scoped to avoid cross-account conflicts.
@@ -326,6 +335,7 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
               dingtalkConfig: config,
             });
             stats.processed += 1;
+            acknowledge();
             if (stats.received % INBOUND_COUNTER_LOG_EVERY === 0) {
               logInboundCounters(ctx.log, account.accountId, "periodic");
             }
@@ -335,6 +345,7 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
           if (isMessageProcessed(dedupKey)) {
             ctx.log?.debug?.(`[${account.accountId}] Skipping duplicate message: ${dedupKey}`);
             stats.dedupSkipped += 1;
+            acknowledge();
             logInboundCounters(ctx.log, account.accountId, "dedup-skipped");
             return;
           }
@@ -360,6 +371,7 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
             });
             stats.processed += 1;
             markMessageProcessed(dedupKey);
+            acknowledge();
             if (stats.received % INBOUND_COUNTER_LOG_EVERY === 0) {
               logInboundCounters(ctx.log, account.accountId, "periodic");
             }
