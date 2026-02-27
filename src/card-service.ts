@@ -8,7 +8,6 @@ import type {
   AICardInstance,
   AICardStreamingRequest,
   DingTalkConfig,
-  DingTalkInboundMessage,
   Logger,
 } from "./types";
 import { AICardStatus } from "./types";
@@ -87,10 +86,32 @@ async function sendTemplateMismatchNotification(
   }
 }
 
+/**
+ * Send a proactive text message via card API (createAndDeliver + immediate finalize).
+ * Used in card mode to replace oToMessages/batchSend for single-chat users.
+ */
+export async function sendProactiveCardText(
+  config: DingTalkConfig,
+  conversationId: string,
+  content: string,
+  log?: Logger,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const card = await createAICard(config, conversationId, log);
+    if (!card) {
+      return { ok: false, error: "Failed to create AI card" };
+    }
+    await finishAICard(card, content, log);
+    return { ok: true };
+  } catch (err: any) {
+    log?.error?.(`[DingTalk][AICard] Proactive card send failed: ${err.message}`);
+    return { ok: false, error: err.message };
+  }
+}
+
 export async function createAICard(
   config: DingTalkConfig,
   conversationId: string,
-  data: DingTalkInboundMessage,
   log?: Logger,
 ): Promise<AICardInstance | null> {
   try {
@@ -99,9 +120,6 @@ export async function createAICard(
     const cardInstanceId = `card_${randomUUID()}`;
 
     log?.info?.(`[DingTalk][AICard] Creating and delivering card outTrackId=${cardInstanceId}`);
-    log?.debug?.(
-      `[DingTalk][AICard] conversationType=${data.conversationType}, conversationId=${conversationId}`,
-    );
 
     const isGroup = conversationId.startsWith("cid");
 

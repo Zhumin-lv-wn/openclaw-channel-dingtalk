@@ -408,7 +408,10 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
 
   if (useCardMode) {
     try {
-      const aiCard = await createAICard(dingtalkConfig, to, data, log);
+      log?.debug?.(
+        `[DingTalk][AICard] conversationType=${data.conversationType}, conversationId=${to}`,
+      );
+      const aiCard = await createAICard(dingtalkConfig, to, log);
       if (aiCard) {
         currentAICard = aiCard;
       } else {

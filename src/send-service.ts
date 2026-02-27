@@ -3,6 +3,7 @@ import axios from "axios";
 import { getAccessToken } from "./auth";
 import {
   isCardInTerminalState,
+  sendProactiveCardText,
   streamAICard,
 } from "./card-service";
 import { stripTargetPrefix } from "./config";
@@ -80,7 +81,6 @@ export async function sendProactiveTextOrMarkdown(
   options: SendMessageOptions = {},
 ): Promise<AxiosResponse> {
   const log = options.log || getLogger();
-  const token = await getAccessToken(config, log);
 
   // Support group:/user: prefix and restore original case-sensitive conversationId.
   const { targetId, isExplicitUser } = stripTargetPrefix(target);
@@ -93,6 +93,21 @@ export async function sendProactiveTextOrMarkdown(
     ? ` proactiveRisk=${proactiveRisk.level}:${proactiveRisk.reason}`
     : "";
 
+  // In card mode, use card API to avoid oToMessages/batchSend permission requirement.
+  const messageType = config.messageType || "markdown";
+  if (messageType === "card" && config.cardTemplateId) {
+    log?.debug?.(
+      `[DingTalk] Using card API for proactive message to user ${resolvedTarget}${proactiveRiskTag}`,
+    );
+    const result = await sendProactiveCardText(config, resolvedTarget, text, log);
+    if (result.ok) {
+      return {} as AxiosResponse; // Return empty response for compatibility
+    }
+    // If card send failed, throw error to trigger fallback handling
+    throw new Error(result.error || "Card send failed");
+  }
+
+  const token = await getAccessToken(config, log);
   const url = isGroup
     ? "https://api.dingtalk.com/v1.0/robot/groupMessages/send"
     : "https://api.dingtalk.com/v1.0/robot/oToMessages/batchSend";

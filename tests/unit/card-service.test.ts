@@ -41,8 +41,7 @@ describe('card-service', () => {
 
         const card = await createAICard(
             { clientId: 'id', clientSecret: 'sec', cardTemplateId: 'tmpl.schema', robotCode: 'id' } as any,
-            'cidA1B2C3',
-            { conversationType: '2' } as any
+            'cidA1B2C3'
         );
 
         expect(card).toBeTruthy();
@@ -53,8 +52,7 @@ describe('card-service', () => {
     it('createAICard returns null when templateId is missing', async () => {
         const card = await createAICard(
             { clientId: 'id', clientSecret: 'sec' } as any,
-            'cidA1B2C3',
-            { conversationType: '2' } as any
+            'cidA1B2C3'
         );
 
         expect(card).toBeNull();
