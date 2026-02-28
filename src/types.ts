@@ -54,6 +54,8 @@ export interface DingTalkConfig extends OpenClawConfig {
   reconnectJitter?: number;
   /** Maximum number of runtime reconnect cycles before giving up (default: 10) */
   maxReconnectCycles?: number;
+  /** Maximum inbound media file size in MB (default: 20) */
+  mediaMaxMb?: number;
   proactivePermissionHint?: {
     enabled?: boolean;
     cooldownHours?: number;
@@ -87,6 +89,8 @@ export interface DingTalkChannelConfig {
   reconnectJitter?: number;
   /** Maximum number of runtime reconnect cycles before giving up (default: 10) */
   maxReconnectCycles?: number;
+  /** Maximum inbound media file size in MB (default: 20) */
+  mediaMaxMb?: number;
   proactivePermissionHint?: {
     enabled?: boolean;
     cooldownHours?: number;
@@ -423,6 +427,15 @@ export interface DingTalkOutboundHandler {
 /**
  * AI Card status constants
  */
+/** Default inbound media size limit when `mediaMaxMb` is not configured (MB). */
+export const DINGTALK_DEFAULT_MEDIA_MAX_MB = 20;
+
+/** Resolve the effective inbound media byte limit from config. */
+export function resolveMediaMaxBytes(config: { mediaMaxMb?: number }): number {
+  const mb = config.mediaMaxMb && config.mediaMaxMb > 0 ? config.mediaMaxMb : DINGTALK_DEFAULT_MEDIA_MAX_MB;
+  return mb * 1024 * 1024;
+}
+
 export const AICardStatus = {
   PROCESSING: "1",
   INPUTING: "2",
@@ -567,6 +580,7 @@ export function resolveDingTalkAccount(
       maxReconnectDelay: dingtalk?.maxReconnectDelay,
       reconnectJitter: dingtalk?.reconnectJitter,
       maxReconnectCycles: dingtalk?.maxReconnectCycles,
+      mediaMaxMb: dingtalk?.mediaMaxMb,
       proactivePermissionHint: dingtalk?.proactivePermissionHint,
     };
     return {

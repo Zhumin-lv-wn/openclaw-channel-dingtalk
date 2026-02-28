@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { listDingTalkAccountIds, resolveDingTalkAccount } from '../../src/types';
+import { listDingTalkAccountIds, resolveDingTalkAccount, resolveMediaMaxBytes, DINGTALK_DEFAULT_MEDIA_MAX_MB } from '../../src/types';
 
 describe('types helpers', () => {
     it('lists default and named account ids', () => {
@@ -60,5 +60,35 @@ describe('types helpers', () => {
             accountId: 'not_found',
             configured: false,
         });
+    });
+
+    it('resolves default account with mediaMaxMb from config', () => {
+        const cfg = {
+            channels: {
+                dingtalk: {
+                    clientId: 'cli',
+                    clientSecret: 'sec',
+                    mediaMaxMb: 50,
+                },
+            },
+        } as any;
+
+        const account = resolveDingTalkAccount(cfg, 'default');
+        expect(account.mediaMaxMb).toBe(50);
+    });
+});
+
+describe('resolveMediaMaxBytes', () => {
+    it('returns configured value in bytes', () => {
+        expect(resolveMediaMaxBytes({ mediaMaxMb: 50 })).toBe(50 * 1024 * 1024);
+    });
+
+    it('returns default when mediaMaxMb is not set', () => {
+        expect(resolveMediaMaxBytes({})).toBe(DINGTALK_DEFAULT_MEDIA_MAX_MB * 1024 * 1024);
+    });
+
+    it('returns default when mediaMaxMb is 0 or negative', () => {
+        expect(resolveMediaMaxBytes({ mediaMaxMb: 0 })).toBe(DINGTALK_DEFAULT_MEDIA_MAX_MB * 1024 * 1024);
+        expect(resolveMediaMaxBytes({ mediaMaxMb: -5 })).toBe(DINGTALK_DEFAULT_MEDIA_MAX_MB * 1024 * 1024);
     });
 });

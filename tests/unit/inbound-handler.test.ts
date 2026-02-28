@@ -131,6 +131,55 @@ describe('inbound-handler', () => {
         expect(result?.path).toContain('/.openclaw/media/inbound/');
     });
 
+    it('downloadMedia passes custom maxBytes to saveMediaBuffer', async () => {
+        const runtime = buildRuntime();
+        shared.getRuntimeMock.mockReturnValue(runtime);
+
+        mockedAxiosPost.mockResolvedValueOnce({ data: { downloadUrl: 'https://download.url/file' } } as any);
+        mockedAxiosGet.mockResolvedValueOnce({
+            data: Buffer.from('abc'),
+            headers: { 'content-type': 'application/pdf' },
+        } as any);
+
+        const customMaxBytes = 50 * 1024 * 1024;
+        await downloadMedia(
+            { clientId: 'id', clientSecret: 'sec', robotCode: 'robot_1' } as any,
+            'download_code_1',
+            undefined,
+            { maxBytes: customMaxBytes },
+        );
+
+        expect(runtime.channel.media.saveMediaBuffer).toHaveBeenCalledWith(
+            expect.any(Buffer),
+            'application/pdf',
+            'inbound',
+            customMaxBytes,
+        );
+    });
+
+    it('downloadMedia omits maxBytes arg when not provided (uses runtime default)', async () => {
+        const runtime = buildRuntime();
+        shared.getRuntimeMock.mockReturnValue(runtime);
+
+        mockedAxiosPost.mockResolvedValueOnce({ data: { downloadUrl: 'https://download.url/file' } } as any);
+        mockedAxiosGet.mockResolvedValueOnce({
+            data: Buffer.from('abc'),
+            headers: { 'content-type': 'image/png' },
+        } as any);
+
+        await downloadMedia(
+            { clientId: 'id', clientSecret: 'sec', robotCode: 'robot_1' } as any,
+            'download_code_1',
+        );
+
+        expect(runtime.channel.media.saveMediaBuffer).toHaveBeenCalledWith(
+            expect.any(Buffer),
+            'image/png',
+            'inbound',
+            undefined,
+        );
+    });
+
     it('downloadMedia returns null when robotCode missing', async () => {
         const result = await downloadMedia({ clientId: 'id', clientSecret: 'sec' } as any, 'download_code_1');
 

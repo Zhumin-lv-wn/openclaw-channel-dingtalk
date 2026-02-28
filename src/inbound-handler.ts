@@ -23,7 +23,7 @@ import {
 import { getDingTalkRuntime } from "./runtime";
 import { sendBySession, sendMessage } from "./send-service";
 import type { DingTalkConfig, HandleDingTalkMessageParams, MediaFile } from "./types";
-import { AICardStatus } from "./types";
+import { AICardStatus, resolveMediaMaxBytes } from "./types";
 import { formatDingTalkErrorPayloadLog, maskSensitiveData } from "./utils";
 
 const DEFAULT_PROACTIVE_HINT_COOLDOWN_HOURS = 24;
@@ -96,6 +96,7 @@ export async function downloadMedia(
   config: DingTalkConfig,
   downloadCode: string,
   log?: any,
+  options?: { maxBytes?: number },
 ): Promise<MediaFile | null> {
   const rt = getDingTalkRuntime();
   const formatAxiosErrorData = (value: unknown): string | undefined => {
@@ -148,8 +149,12 @@ export async function downloadMedia(
     const contentType = mediaResponse.headers["content-type"] || "application/octet-stream";
     const buffer = Buffer.from(mediaResponse.data as ArrayBuffer);
 
-    // Keep inbound media handling consistent with other channels.
-    const saved = await rt.channel.media.saveMediaBuffer(buffer, contentType, "inbound");
+    const saved = await rt.channel.media.saveMediaBuffer(
+      buffer,
+      contentType,
+      "inbound",
+      options?.maxBytes,
+    );
     log?.debug?.(`[DingTalk] Media saved: ${saved.path}`);
     return { path: saved.path, mimeType: saved.contentType ?? contentType };
   } catch (err: any) {
@@ -329,7 +334,9 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
   let mediaPath: string | undefined;
   let mediaType: string | undefined;
   if (content.mediaPath && dingtalkConfig.robotCode) {
-    const media = await downloadMedia(dingtalkConfig, content.mediaPath, log);
+    const media = await downloadMedia(dingtalkConfig, content.mediaPath, log, {
+      maxBytes: resolveMediaMaxBytes(dingtalkConfig),
+    });
     if (media) {
       mediaPath = media.path;
       mediaType = media.mimeType;
