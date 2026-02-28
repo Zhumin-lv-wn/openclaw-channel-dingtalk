@@ -233,22 +233,25 @@ describe('gateway inbound callback pipeline', () => {
 
         await startGatewayAccount(ctx as any);
 
-        const payload = {
-            headers: { messageId: 'stream_msg_inflight' },
-            data: JSON.stringify({
-                msgId: 'msg_inflight',
-                msgtype: 'text',
-                text: { content: 'in flight' },
-                conversationType: '1',
-                conversationId: 'cidA1B2C3',
-                senderId: 'user_1',
-                chatbotUserId: 'bot_1',
-                sessionWebhook: 'https://webhook',
-            }),
-        };
+        const payloadData = JSON.stringify({
+            msgId: 'msg_inflight',
+            msgtype: 'text',
+            text: { content: 'in flight' },
+            conversationType: '1',
+            conversationId: 'cidA1B2C3',
+            senderId: 'user_1',
+            chatbotUserId: 'bot_1',
+            sessionWebhook: 'https://webhook',
+        });
 
-        const first = shared.listener?.(payload);
-        const second = shared.listener?.(payload);
+        const first = shared.listener?.({
+            headers: { messageId: 'stream_msg_inflight_1' },
+            data: payloadData,
+        });
+        const second = shared.listener?.({
+            headers: { messageId: 'stream_msg_inflight_2' },
+            data: payloadData,
+        });
 
         await Promise.resolve();
         expect(shared.handleDingTalkMessageMock).toHaveBeenCalledTimes(1);
@@ -260,5 +263,8 @@ describe('gateway inbound callback pipeline', () => {
 
         expect(shared.markMessageProcessedMock).toHaveBeenCalledTimes(1);
         expect(shared.markMessageProcessedMock).toHaveBeenCalledWith('robot_1:msg_inflight');
+        expect(shared.socketCallBackResponseMock).toHaveBeenCalledTimes(2);
+        expect(shared.socketCallBackResponseMock).toHaveBeenCalledWith('stream_msg_inflight_1', { success: true });
+        expect(shared.socketCallBackResponseMock).toHaveBeenCalledWith('stream_msg_inflight_2', { success: true });
     });
 });
