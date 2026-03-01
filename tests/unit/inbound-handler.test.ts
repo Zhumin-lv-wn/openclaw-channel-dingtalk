@@ -11,6 +11,7 @@ const shared = vi.hoisted(() => ({
     streamAICardMock: vi.fn(),
     formatContentForCardMock: vi.fn((s: string) => s),
     isCardInTerminalStateMock: vi.fn(),
+    acquireSessionLockMock: vi.fn(),
 }));
 
 vi.mock('axios', () => ({
@@ -44,6 +45,10 @@ vi.mock('../../src/card-service', () => ({
     formatContentForCard: shared.formatContentForCardMock,
     isCardInTerminalState: shared.isCardInTerminalStateMock,
     streamAICard: shared.streamAICardMock,
+}));
+
+vi.mock('../../src/session-lock', () => ({
+    acquireSessionLock: shared.acquireSessionLockMock,
 }));
 
 import {
@@ -97,6 +102,9 @@ describe('inbound-handler', () => {
         shared.finishAICardMock.mockReset();
         shared.streamAICardMock.mockReset();
         shared.isCardInTerminalStateMock.mockReset();
+
+        shared.acquireSessionLockMock.mockReset();
+        shared.acquireSessionLockMock.mockResolvedValue(vi.fn());
 
         shared.getRuntimeMock.mockReturnValue(buildRuntime());
         shared.extractMessageContentMock.mockReturnValue({ text: 'hello', messageType: 'text' });
@@ -748,6 +756,48 @@ describe('inbound-handler', () => {
 
         expect(shared.finishAICardMock).not.toHaveBeenCalled();
         expect(shared.streamAICardMock).not.toHaveBeenCalled();
+    });
+
+    it('acquires session lock with the resolved sessionKey', async () => {
+        await handleDingTalkMessage({
+            cfg: {},
+            accountId: 'main',
+            sessionWebhook: 'https://session.webhook',
+            log: undefined,
+            dingtalkConfig: { dmPolicy: 'open', messageType: 'markdown', showThinking: false } as any,
+            data: {
+                msgId: 'lock_test', msgtype: 'text', text: { content: 'hello' },
+                conversationType: '1', conversationId: 'cid_ok', senderId: 'user_1',
+                chatbotUserId: 'bot_1', sessionWebhook: 'https://session.webhook', createAt: Date.now(),
+            },
+        } as any);
+
+        expect(shared.acquireSessionLockMock).toHaveBeenCalledTimes(1);
+        expect(shared.acquireSessionLockMock).toHaveBeenCalledWith('s1');
+    });
+
+    it('releases session lock even when dispatchReply throws', async () => {
+        const releaseFn = vi.fn();
+        shared.acquireSessionLockMock.mockResolvedValueOnce(releaseFn);
+
+        const runtime = buildRuntime();
+        runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher = vi.fn().mockRejectedValueOnce(new Error('dispatch crash'));
+        shared.getRuntimeMock.mockReturnValueOnce(runtime);
+
+        await expect(handleDingTalkMessage({
+            cfg: {},
+            accountId: 'main',
+            sessionWebhook: 'https://session.webhook',
+            log: { debug: vi.fn(), warn: vi.fn(), error: vi.fn(), info: vi.fn() } as any,
+            dingtalkConfig: { dmPolicy: 'open', messageType: 'markdown', showThinking: false } as any,
+            data: {
+                msgId: 'lock_crash', msgtype: 'text', text: { content: 'hello' },
+                conversationType: '1', conversationId: 'cid_ok', senderId: 'user_1',
+                chatbotUserId: 'bot_1', sessionWebhook: 'https://session.webhook', createAt: Date.now(),
+            },
+        } as any)).rejects.toThrow('dispatch crash');
+
+        expect(releaseFn).toHaveBeenCalledTimes(1);
     });
 
     it('does not leak unhandled stop reason text to outbound chat messages', async () => {
