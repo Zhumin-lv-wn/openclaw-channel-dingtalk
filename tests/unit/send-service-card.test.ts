@@ -49,6 +49,38 @@ describe('sendMessage card mode', () => {
         expect(result).toEqual({ ok: true });
     });
 
+    it('skips card streaming when provided card is in terminal state', async () => {
+        const card = { cardInstanceId: 'card_done', state: AICardStatus.FINISHED, lastUpdated: Date.now() } as any;
+        cardMocks.isCardInTerminalStateMock.mockReturnValue(true);
+        mockedAxios.mockResolvedValue({ data: { processQueryKey: 'q_456' } } as any);
+
+        const result = await sendMessage(
+            { clientId: 'id', clientSecret: 'sec', messageType: 'card', robotCode: 'id' } as any,
+            'cidA1B2C3',
+            'fallback text',
+            { card, sessionWebhook: 'https://session.webhook' }
+        );
+
+        expect(cardMocks.streamAICardMock).not.toHaveBeenCalled();
+        expect(result.ok).toBe(true);
+    });
+
+    it('skips card branch entirely when no card is provided', async () => {
+        cardMocks.isCardInTerminalStateMock.mockReturnValue(false);
+        mockedAxios.mockResolvedValue({ data: { processQueryKey: 'q_789' } } as any);
+
+        const result = await sendMessage(
+            { clientId: 'id', clientSecret: 'sec', messageType: 'card', robotCode: 'id' } as any,
+            'cidA1B2C3',
+            'no card text',
+            { sessionWebhook: 'https://session.webhook' }
+        );
+
+        expect(cardMocks.streamAICardMock).not.toHaveBeenCalled();
+        expect(cardMocks.isCardInTerminalStateMock).not.toHaveBeenCalled();
+        expect(result.ok).toBe(true);
+    });
+
     it('falls back to proactive markdown when stream fails', async () => {
         const card = { cardInstanceId: 'card_1', state: AICardStatus.PROCESSING, lastUpdated: Date.now() } as any;
         cardMocks.isCardInTerminalStateMock.mockReturnValue(false);
