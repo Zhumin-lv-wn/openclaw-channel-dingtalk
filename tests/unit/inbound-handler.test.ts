@@ -550,6 +550,163 @@ describe('inbound-handler', () => {
         expect(shared.sendBySessionMock).not.toHaveBeenCalled();
     });
 
+    it('concurrent messages create independent cards with distinct IDs', async () => {
+        let resolveA!: () => void;
+        const gateA = new Promise<void>((r) => { resolveA = r; });
+
+        const cardA = { cardInstanceId: 'card_A', state: '1', lastUpdated: Date.now() } as any;
+        const cardB = { cardInstanceId: 'card_B', state: '1', lastUpdated: Date.now() } as any;
+        shared.createAICardMock
+            .mockResolvedValueOnce(cardA)
+            .mockResolvedValueOnce(cardB);
+        shared.isCardInTerminalStateMock.mockReturnValue(false);
+
+        const runtimeA = buildRuntime();
+        runtimeA.channel.reply.dispatchReplyWithBufferedBlockDispatcher = vi.fn().mockImplementation(async ({ dispatcherOptions }) => {
+            await gateA;
+            await dispatcherOptions.deliver({ text: 'reply A' }, { kind: 'final' });
+            return { queuedFinal: 'reply A' };
+        });
+        const runtimeB = buildRuntime();
+        runtimeB.channel.reply.dispatchReplyWithBufferedBlockDispatcher = vi.fn().mockImplementation(async ({ dispatcherOptions }) => {
+            await dispatcherOptions.deliver({ text: 'reply B' }, { kind: 'final' });
+            return { queuedFinal: 'reply B' };
+        });
+        shared.getRuntimeMock
+            .mockReturnValueOnce(runtimeA)
+            .mockReturnValueOnce(runtimeB);
+
+        const baseParams = {
+            cfg: {},
+            accountId: 'main',
+            sessionWebhook: 'https://session.webhook',
+            log: undefined,
+            dingtalkConfig: { dmPolicy: 'open', messageType: 'card', showThinking: false } as any,
+        };
+
+        const promiseA = handleDingTalkMessage({
+            ...baseParams,
+            data: {
+                msgId: 'concurrent_A', msgtype: 'text', text: { content: 'hello A' },
+                conversationType: '1', conversationId: 'cid_same', senderId: 'user_1',
+                chatbotUserId: 'bot_1', sessionWebhook: 'https://session.webhook', createAt: Date.now(),
+            },
+        } as any);
+
+        const promiseB = handleDingTalkMessage({
+            ...baseParams,
+            data: {
+                msgId: 'concurrent_B', msgtype: 'text', text: { content: 'hello B' },
+                conversationType: '1', conversationId: 'cid_same', senderId: 'user_1',
+                chatbotUserId: 'bot_1', sessionWebhook: 'https://session.webhook', createAt: Date.now(),
+            },
+        } as any);
+
+        await promiseB;
+        resolveA();
+        await promiseA;
+
+        expect(shared.createAICardMock).toHaveBeenCalledTimes(2);
+        expect(shared.finishAICardMock).toHaveBeenCalledTimes(2);
+
+        const finishCalls = shared.finishAICardMock.mock.calls;
+        const finishedCardIds = finishCalls.map((call: any[]) => call[0].cardInstanceId);
+        expect(finishedCardIds).toContain('card_A');
+        expect(finishedCardIds).toContain('card_B');
+    });
+
+    it('concurrent messages pass correct card reference to sendMessage', async () => {
+        let resolveA!: () => void;
+        const gateA = new Promise<void>((r) => { resolveA = r; });
+
+        const cardA = { cardInstanceId: 'card_A', state: '1', lastUpdated: Date.now() } as any;
+        const cardB = { cardInstanceId: 'card_B', state: '1', lastUpdated: Date.now() } as any;
+        shared.createAICardMock
+            .mockResolvedValueOnce(cardA)
+            .mockResolvedValueOnce(cardB);
+        shared.isCardInTerminalStateMock.mockReturnValue(false);
+
+        const runtimeA = buildRuntime();
+        runtimeA.channel.reply.dispatchReplyWithBufferedBlockDispatcher = vi.fn().mockImplementation(async ({ dispatcherOptions }) => {
+            await gateA;
+            await dispatcherOptions.deliver({ text: 'tool A' }, { kind: 'tool' });
+            await dispatcherOptions.deliver({ text: 'reply A' }, { kind: 'final' });
+            return { queuedFinal: 'reply A' };
+        });
+        const runtimeB = buildRuntime();
+        runtimeB.channel.reply.dispatchReplyWithBufferedBlockDispatcher = vi.fn().mockImplementation(async ({ dispatcherOptions }) => {
+            await dispatcherOptions.deliver({ text: 'tool B' }, { kind: 'tool' });
+            await dispatcherOptions.deliver({ text: 'reply B' }, { kind: 'final' });
+            return { queuedFinal: 'reply B' };
+        });
+        shared.getRuntimeMock
+            .mockReturnValueOnce(runtimeA)
+            .mockReturnValueOnce(runtimeB);
+
+        const baseParams = {
+            cfg: {},
+            accountId: 'main',
+            sessionWebhook: 'https://session.webhook',
+            log: undefined,
+            dingtalkConfig: { dmPolicy: 'open', messageType: 'card', showThinking: false } as any,
+        };
+
+        const promiseA = handleDingTalkMessage({
+            ...baseParams,
+            data: {
+                msgId: 'bind_A', msgtype: 'text', text: { content: 'hello A' },
+                conversationType: '1', conversationId: 'cid_same', senderId: 'user_1',
+                chatbotUserId: 'bot_1', sessionWebhook: 'https://session.webhook', createAt: Date.now(),
+            },
+        } as any);
+
+        const promiseB = handleDingTalkMessage({
+            ...baseParams,
+            data: {
+                msgId: 'bind_B', msgtype: 'text', text: { content: 'hello B' },
+                conversationType: '1', conversationId: 'cid_same', senderId: 'user_1',
+                chatbotUserId: 'bot_1', sessionWebhook: 'https://session.webhook', createAt: Date.now(),
+            },
+        } as any);
+
+        await promiseB;
+        resolveA();
+        await promiseA;
+
+        const streamCalls = shared.streamAICardMock.mock.calls;
+        const streamedToolA = streamCalls.find((call: any[]) => call[1] === 'tool A');
+        const streamedToolB = streamCalls.find((call: any[]) => call[1] === 'tool B');
+        expect(streamedToolA).toBeTruthy();
+        expect(streamedToolB).toBeTruthy();
+        expect(streamedToolA![0].cardInstanceId).toBe('card_A');
+        expect(streamedToolB![0].cardInstanceId).toBe('card_B');
+    });
+
+    it('message A card in terminal state still finalizes without affecting message B', async () => {
+        const cardA = { cardInstanceId: 'card_term', state: '3', lastUpdated: Date.now() } as any;
+        shared.createAICardMock.mockResolvedValueOnce(cardA);
+        shared.isCardInTerminalStateMock.mockImplementation((state: string) => state === '3' || state === '5');
+
+        const runtime = buildRuntime();
+        shared.getRuntimeMock.mockReturnValueOnce(runtime);
+
+        await handleDingTalkMessage({
+            cfg: {},
+            accountId: 'main',
+            sessionWebhook: 'https://session.webhook',
+            log: undefined,
+            dingtalkConfig: { dmPolicy: 'open', messageType: 'card', showThinking: false } as any,
+            data: {
+                msgId: 'term_card', msgtype: 'text', text: { content: 'hello' },
+                conversationType: '1', conversationId: 'cid_ok', senderId: 'user_1',
+                chatbotUserId: 'bot_1', sessionWebhook: 'https://session.webhook', createAt: Date.now(),
+            },
+        } as any);
+
+        expect(shared.finishAICardMock).not.toHaveBeenCalled();
+        expect(shared.streamAICardMock).not.toHaveBeenCalled();
+    });
+
     it('does not leak unhandled stop reason text to outbound chat messages', async () => {
         const runtime = buildRuntime();
         runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher = vi.fn().mockImplementation(async ({ dispatcherOptions }) => {
