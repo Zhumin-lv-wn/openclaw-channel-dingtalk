@@ -137,8 +137,10 @@ export class ConnectionManager {
       // closed before the connection was established").
       try {
         this.client.disconnect();
-      } catch {
-        // Ignore — disconnect may throw if there is no active socket yet.
+      } catch (disconnectErr: any) {
+        this.log?.debug?.(
+          `[${this.accountId}] pre-connect cleanup disconnect failed: ${disconnectErr.message}`,
+        );
       }
 
       await this.client.connect();
