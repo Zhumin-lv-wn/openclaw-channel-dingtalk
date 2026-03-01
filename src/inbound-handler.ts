@@ -321,6 +321,35 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     agentId: route.agentId,
   });
 
+  const to = isDirect ? senderId : groupId;
+
+  // 3) Select response mode (card vs markdown).
+  // Card creation runs BEFORE media download so the user sees immediate visual
+  // feedback while large files are still being downloaded.
+  const useCardMode = dingtalkConfig.messageType === "card";
+  let currentAICard = undefined;
+  let lastCardContent = "";
+
+  if (useCardMode) {
+    try {
+      log?.debug?.(
+        `[DingTalk][AICard] conversationType=${data.conversationType}, conversationId=${to}`,
+      );
+      const aiCard = await createAICard(dingtalkConfig, to, log);
+      if (aiCard) {
+        currentAICard = aiCard;
+      } else {
+        log?.warn?.(
+          "[DingTalk] Failed to create AI card (returned null), fallback to text/markdown.",
+        );
+      }
+    } catch (err: any) {
+      log?.warn?.(
+        `[DingTalk] Failed to create AI card: ${err.message}, fallback to text/markdown.`,
+      );
+    }
+  }
+
   let mediaPath: string | undefined;
   let mediaType: string | undefined;
   if (content.mediaPath && dingtalkConfig.robotCode) {
@@ -361,7 +390,6 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
     envelope: envelopeOptions,
   });
 
-  const to = isDirect ? senderId : groupId;
   const ctx = rt.channel.reply.finalizeInboundContext({
     Body: body,
     RawBody: content.text,
@@ -401,33 +429,6 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
   });
 
   log?.info?.(`[DingTalk] Inbound: from=${senderName} text="${content.text.slice(0, 50)}..."`);
-
-  // 3) Select response mode (card vs markdown).
-  // Card creation runs OUTSIDE the session lock so all cards appear immediately,
-  // giving the user instant visual feedback that every message was received.
-  const useCardMode = dingtalkConfig.messageType === "card";
-  let currentAICard = undefined;
-  let lastCardContent = "";
-
-  if (useCardMode) {
-    try {
-      log?.debug?.(
-        `[DingTalk][AICard] conversationType=${data.conversationType}, conversationId=${to}`,
-      );
-      const aiCard = await createAICard(dingtalkConfig, to, log);
-      if (aiCard) {
-        currentAICard = aiCard;
-      } else {
-        log?.warn?.(
-          "[DingTalk] Failed to create AI card (returned null), fallback to text/markdown.",
-        );
-      }
-    } catch (err: any) {
-      log?.warn?.(
-        `[DingTalk] Failed to create AI card: ${err.message}, fallback to text/markdown.`,
-      );
-    }
-  }
 
   // Serialize dispatchReply + card finalize per session to prevent the runtime
   // from receiving concurrent dispatch calls on the same session key, which
