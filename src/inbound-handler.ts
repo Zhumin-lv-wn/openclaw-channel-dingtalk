@@ -405,36 +405,38 @@ export async function handleDingTalkMessage(params: HandleDingTalkMessageParams)
 
   log?.info?.(`[DingTalk] Inbound: from=${senderName} text="${content.text.slice(0, 50)}..."`);
 
-  // Serialize card creation + dispatchReply + card finalize per session to prevent
-  // the runtime from receiving concurrent dispatch calls on the same session key,
-  // which causes empty replies for all but the first caller.
-  const releaseSessionLock = await acquireSessionLock(route.sessionKey);
-  try {
-    // 3) Select response mode (card vs markdown).
-    const useCardMode = dingtalkConfig.messageType === "card";
-    let currentAICard = undefined;
-    let lastCardContent = "";
+  // 3) Select response mode (card vs markdown).
+  // Card creation runs OUTSIDE the session lock so all cards appear immediately,
+  // giving the user instant visual feedback that every message was received.
+  const useCardMode = dingtalkConfig.messageType === "card";
+  let currentAICard = undefined;
+  let lastCardContent = "";
 
-    if (useCardMode) {
-      try {
-        log?.debug?.(
-          `[DingTalk][AICard] conversationType=${data.conversationType}, conversationId=${to}`,
-        );
-        const aiCard = await createAICard(dingtalkConfig, to, log);
-        if (aiCard) {
-          currentAICard = aiCard;
-        } else {
-          log?.warn?.(
-            "[DingTalk] Failed to create AI card (returned null), fallback to text/markdown.",
-          );
-        }
-      } catch (err: any) {
+  if (useCardMode) {
+    try {
+      log?.debug?.(
+        `[DingTalk][AICard] conversationType=${data.conversationType}, conversationId=${to}`,
+      );
+      const aiCard = await createAICard(dingtalkConfig, to, log);
+      if (aiCard) {
+        currentAICard = aiCard;
+      } else {
         log?.warn?.(
-          `[DingTalk] Failed to create AI card: ${err.message}, fallback to text/markdown.`,
+          "[DingTalk] Failed to create AI card (returned null), fallback to text/markdown.",
         );
       }
+    } catch (err: any) {
+      log?.warn?.(
+        `[DingTalk] Failed to create AI card: ${err.message}, fallback to text/markdown.`,
+      );
     }
+  }
 
+  // Serialize dispatchReply + card finalize per session to prevent the runtime
+  // from receiving concurrent dispatch calls on the same session key, which
+  // causes empty replies for all but the first caller.
+  const releaseSessionLock = await acquireSessionLock(route.sessionKey);
+  try {
     // 4) Optional "thinking..." feedback for non-card mode.
     if (dingtalkConfig.showThinking !== false) {
       try {
