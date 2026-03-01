@@ -355,6 +355,7 @@ export const dingtalkPlugin: DingTalkChannelPlugin = {
               `[${account.accountId}] Skipping in-flight duplicate message: ${dedupKey}`,
             );
             stats.inflightSkipped += 1;
+            acknowledge();
             logInboundCounters(ctx.log, account.accountId, "inflight-skipped");
             return;
           }
